@@ -12,6 +12,7 @@ import {
 import { cx } from "@/lib/utils/cx"
 
 import { computeCustomGrowth } from "./clientGrowth"
+import { computePageviewsForRange } from "./clientPageviews"
 import type { DashboardData, GrowthRangeKey, Ranking } from "./types"
 import Header from "@/components/Header"
 import AuthGuard from "@/components/AuthGuard"
@@ -241,7 +242,7 @@ export default function Dashboard({ data }: { data: DashboardData }) {
   const [range, setRange] = useState<RangeKey>("12M")
   const [customStart, setCustomStart] = useState<string>(monthsAgo(6))
   const [customEnd, setCustomEnd] = useState<string>(today())
-  const { totals, growth, pageviewsDaily, catalogues, raw } = data
+  const { totals, growth, catalogues, plans, raw } = data
 
   const current = useMemo(() => {
     if (range === "CUSTOM") {
@@ -254,6 +255,22 @@ export default function Dashboard({ data }: { data: DashboardData }) {
     }
     return growth[range]
   }, [range, customStart, customEnd, growth, raw])
+
+  const pageviewsSeries = useMemo(() => {
+    let start: string
+    let end: string
+    if (range === "CUSTOM") {
+      start = customStart
+      end = customEnd
+    } else {
+      end = today()
+      if (range === "3M") start = monthsAgo(3)
+      else if (range === "6M") start = monthsAgo(6)
+      else if (range === "12M") start = monthsAgo(12)
+      else start = raw.analyticsDaily[0]?.date ?? monthsAgo(12)
+    }
+    return computePageviewsForRange(raw.analyticsDaily, start, end)
+  }, [range, customStart, customEnd, raw.analyticsDaily])
 
   const animationKey =
     range === "CUSTOM" ? `custom-${customStart}-${customEnd}` : range
@@ -345,8 +362,8 @@ export default function Dashboard({ data }: { data: DashboardData }) {
                 colors={["blue"]}
                 valueFormatter={number}
                 showLegend={false}
-                yAxisWidth={48}
-                className="h-64"
+                yAxisWidth={56}
+                className="h-64 [&_.recharts-cartesian-axis-tick_text]:text-[10px]"
               />
             </Card>
 
@@ -375,8 +392,8 @@ export default function Dashboard({ data }: { data: DashboardData }) {
                 colors={["violet"]}
                 valueFormatter={number}
                 showLegend={false}
-                yAxisWidth={48}
-                className="h-64"
+                yAxisWidth={56}
+                className="h-64 [&_.recharts-cartesian-axis-tick_text]:text-[10px]"
               />
             </Card>
           </div>
@@ -397,7 +414,7 @@ export default function Dashboard({ data }: { data: DashboardData }) {
                 showLegend={false}
                 valueFormatter={number}
                 yAxisWidth={40}
-                className="h-52"
+                className="h-52 [&_.recharts-cartesian-axis-tick_text]:text-[10px]"
               />
             </Card>
             <Card>
@@ -412,27 +429,33 @@ export default function Dashboard({ data }: { data: DashboardData }) {
                 showLegend={false}
                 valueFormatter={number}
                 yAxisWidth={40}
-                className="h-52"
+                className="h-52 [&_.recharts-cartesian-axis-tick_text]:text-[10px]"
               />
             </Card>
           </div>
         </section>
 
-        {/* Pageviews timeline (full width) */}
+        {/* Pageviews timeline (full width) - follows the selected range */}
         <section className="space-y-3">
-          <h2 className="text-sm font-medium text-gray-700 dark:text-gray-300">
-            Pageviews - last 30 days
-          </h2>
+          <div>
+            <h2 className="text-sm font-medium text-gray-700 dark:text-gray-300">
+              Pageviews
+            </h2>
+            <p className="text-xs text-gray-500 dark:text-gray-400">
+              Totals over the selected period
+            </p>
+          </div>
           <Card>
-            <LineChart
-              data={pageviewsDaily}
+            <AreaChart
+              key={animationKey}
+              data={pageviewsSeries}
               index="date"
               categories={["Pageviews", "Unique visitors"]}
               colors={["emerald", "cyan"]}
               valueFormatter={number}
-              yAxisWidth={48}
+              yAxisWidth={56}
               startEndOnly
-              className="h-64"
+              className="animate-chart-in h-64 [&_.recharts-cartesian-axis-tick_text]:text-[10px]"
             />
           </Card>
         </section>
@@ -502,6 +525,66 @@ export default function Dashboard({ data }: { data: DashboardData }) {
                 showLegend={false}
                 valueFormatter={number}
                 yAxisWidth={56}
+                className="h-full min-h-64 flex-1"
+              />
+            </Card>
+          </div>
+        </section>
+
+        {/* Users by plan */}
+        <section className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+          <div className="flex flex-col gap-3 lg:col-span-1">
+            <h2 className="text-sm font-medium text-gray-700 dark:text-gray-300">
+              Users by plan
+            </h2>
+            <Card className="flex flex-1 flex-col">
+              {plans.byUsers.length === 0 ? (
+                <p className="py-8 text-center text-sm text-gray-500 dark:text-gray-400">
+                  No data yet.
+                </p>
+              ) : (
+                <>
+                  <div className="flex flex-1 items-center justify-center">
+                    <div className="relative h-44 w-44">
+                      <DonutChart
+                        data={plans.byUsers}
+                        category="name"
+                        value="value"
+                        colors={["blue", "violet", "emerald", "amber", "cyan", "pink", "lime", "gray"]}
+                        valueFormatter={number}
+                        className="h-44 w-44"
+                      />
+                      <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
+                        <p className="text-xs text-gray-500 dark:text-gray-400">
+                          Users
+                        </p>
+                        <p className="text-2xl font-semibold tabular-nums text-gray-900 dark:text-gray-50">
+                          {number(totals.users)}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="pt-4">
+                    <DonutLegend data={plans.byUsers} />
+                  </div>
+                </>
+              )}
+            </Card>
+          </div>
+
+          <div className="flex flex-col gap-3 lg:col-span-2">
+            <h2 className="text-sm font-medium text-gray-700 dark:text-gray-300">
+              Users per plan
+            </h2>
+            <Card className="flex flex-1 flex-col">
+              <BarChart
+                data={plans.byUsers}
+                index="name"
+                categories={["value"]}
+                colors={["blue"]}
+                showLegend={false}
+                valueFormatter={number}
+                yAxisWidth={40}
                 className="h-full min-h-64 flex-1"
               />
             </Card>

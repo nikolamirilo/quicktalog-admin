@@ -9,8 +9,8 @@ export default async function Page() {
   const cookieStore = await cookies()
   const supabase = createClient(cookieStore)
 
-  const [usersRes, cataloguesRes, analyticsRes] = await Promise.all([
-    supabase.from("users").select("id, email, name, created_at"),
+  const [usersRes, cataloguesRes, analyticsRes, plansRes] = await Promise.all([
+    supabase.from("users").select("id, email, name, created_at, plan_id"),
     supabase
       .from("catalogues")
       .select(
@@ -19,12 +19,14 @@ export default async function Page() {
     supabase
       .from("analytics")
       .select("date, current_url, pageview_count, unique_visitors, user_id"),
+    supabase.from("plans").select("id, name"),
   ])
 
   const data = aggregate(
     usersRes.data ?? [],
     cataloguesRes.data ?? [],
     analyticsRes.data ?? [],
+    plansRes.data ?? [],
   )
 
   return <Dashboard data={data} />

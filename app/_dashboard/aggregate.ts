@@ -3,7 +3,6 @@ import type {
   CataloguePoint,
   DashboardData,
   GrowthSeries,
-  Pageview,
   Ranking,
   UserPoint,
 } from "./types"
@@ -13,6 +12,12 @@ type UserRow = {
   email: string | null
   name: string | null
   created_at: string | null
+  plan_id: string | null
+}
+
+type PlanRow = {
+  id: string
+  name: string
 }
 
 type CatalogueRow = {
@@ -48,10 +53,6 @@ const monthLabel = (key: string) => {
 }
 
 const dayKey = (iso: string) => iso.slice(0, 10)
-const dayLabel = (key: string) => {
-  const d = new Date(`${key}T00:00:00Z`)
-  return d.toLocaleString("en-US", { month: "short", day: "numeric" })
-}
 
 const lastMonths = (count: number): string[] => {
   const out: string[] = []
@@ -61,17 +62,6 @@ const lastMonths = (count: number): string[] => {
     out.push(
       `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`,
     )
-  }
-  return out
-}
-
-const fillDays = (count: number): string[] => {
-  const out: string[] = []
-  const today = new Date()
-  for (let i = count - 1; i >= 0; i--) {
-    const d = new Date(today)
-    d.setUTCDate(today.getUTCDate() - i)
-    out.push(d.toISOString().slice(0, 10))
   }
   return out
 }
@@ -174,6 +164,7 @@ export function aggregate(
   users: UserRow[],
   catalogues: CatalogueRow[],
   analytics: AnalyticsRow[],
+  plans: PlanRow[] = [],
 ): DashboardData {
   const totalPageviews = analytics.reduce(
     (s, a) => s + (a.pageview_count ?? 0),
@@ -196,22 +187,19 @@ export function aggregate(
     ),
   }
 
-  // Pageviews daily (last 30 days)
-  const days = fillDays(30)
-  const pvByDay = new Map<string, { pv: number; uv: number }>()
-  days.forEach((d) => pvByDay.set(d, { pv: 0, uv: 0 }))
+  // Raw daily analytics totals (all days with data, sorted ascending) -
+  // client computes the display series based on the selected range.
+  const dailyTotals = new Map<string, { pv: number; uv: number }>()
   for (const a of analytics) {
     const k = dayKey(a.date)
-    const bucket = pvByDay.get(k)
-    if (!bucket) continue
+    const bucket = dailyTotals.get(k) ?? { pv: 0, uv: 0 }
     bucket.pv += a.pageview_count ?? 0
     bucket.uv += a.unique_visitors ?? 0
+    dailyTotals.set(k, bucket)
   }
-  const pageviewsDaily: Pageview[] = days.map((k) => ({
-    date: dayLabel(k),
-    Pageviews: pvByDay.get(k)!.pv,
-    "Unique visitors": pvByDay.get(k)!.uv,
-  }))
+  const analyticsDaily = Array.from(dailyTotals.entries())
+    .map(([date, v]) => ({ date, pv: v.pv, uv: v.uv }))
+    .sort((a, b) => (a.date < b.date ? -1 : 1))
 
   // Catalogue breakdowns
   const byStatus = bucketise(
@@ -229,6 +217,19 @@ export function aggregate(
     catalogues.map((c) => ({ key: c.business_type })),
     titleCase,
   ).slice(0, 8)
+
+  // Users by plan (joined via users.plan_id -> plans.id)
+  const planNameById = new Map(plans.map((p) => [p.id, p.name]))
+  const planCounts = new Map<string, number>()
+  for (const p of plans) planCounts.set(p.name, 0)
+  for (const u of users) {
+    const name = u.plan_id ? (planNameById.get(u.plan_id) ?? "Unknown") : "None"
+    planCounts.set(name, (planCounts.get(name) ?? 0) + 1)
+  }
+  const planByUsers: Bucket[] = Array.from(planCounts.entries())
+    .map(([name, value]) => ({ name, value }))
+    .filter((b) => b.value > 0)
+    .sort((a, b) => b.value - a.value)
 
   // Top catalogues by pageviews
   const pvByUrl = new Map<string, number>()
@@ -299,9 +300,10 @@ export function aggregate(
         .filter((u): u is UserRow & { created_at: string } => !!u.created_at)
         .map((u) => u.created_at),
       catalogueCreatedAt: catalogues.map((c) => c.created_at),
+      analyticsDaily,
     },
-    pageviewsDaily,
     catalogues: { byStatus, bySource, byLanguage, byBusinessType },
+    plans: { byUsers: planByUsers },
     topCataloguesByPageviews,
     topUsersByCatalogues,
   }

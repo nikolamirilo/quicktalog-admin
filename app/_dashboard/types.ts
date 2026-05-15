@@ -21,6 +21,12 @@ export type GrowthSeries = {
   catalogues: { monthly: CataloguePoint[]; cumulative: CataloguePoint[] }
 }
 
+export type AnalyticsDailyPoint = {
+  date: string
+  pv: number
+  uv: number
+}
+
 export type DashboardData = {
   totals: {
     users: number
@@ -34,13 +40,16 @@ export type DashboardData = {
   raw: {
     userCreatedAt: string[]
     catalogueCreatedAt: string[]
+    analyticsDaily: AnalyticsDailyPoint[]
   }
-  pageviewsDaily: Pageview[]
   catalogues: {
     byStatus: Bucket[]
     bySource: Bucket[]
     byLanguage: Bucket[]
     byBusinessType: Bucket[]
+  }
+  plans: {
+    byUsers: Bucket[]
   }
   topCataloguesByPageviews: Ranking[]
   topUsersByCatalogues: Ranking[]
