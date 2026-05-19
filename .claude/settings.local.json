@@ -4,7 +4,8 @@
       "WebFetch(domain:raw.githubusercontent.com)",
       "WebFetch(domain:tremor.so)",
       "Bash(npm install *)",
-      "Bash(curl -s -o /tmp/dashboard-resp.html -w \"%{http_code}\\\\n\" http://localhost:3000/)"
+      "Bash(curl -s -o /tmp/dashboard-resp.html -w \"%{http_code}\\\\n\" http://localhost:3000/)",
+      "Bash(npx tsc *)"
     ]
   }
 }

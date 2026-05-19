@@ -1,19 +1,17 @@
 "use client"
 
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 
 import {
   AreaChart,
   BarChart,
   Card,
   DonutChart,
-  LineChart,
 } from "@/components/charts"
 import { cx } from "@/lib/utils/cx"
 
-import { computeCustomGrowth } from "./clientGrowth"
-import { computePageviewsForRange } from "./clientPageviews"
-import type { DashboardData, GrowthRangeKey, Ranking } from "./types"
+import { computeView, resolveRange } from "./clientView"
+import type { DashboardData, RangeKey, Ranking } from "./types"
 import Header from "@/components/Header"
 import AuthGuard from "@/components/AuthGuard"
 
@@ -23,8 +21,6 @@ const compact = new Intl.NumberFormat("en-US", { notation: "compact" })
 const number = (n: number) => intl.format(n)
 const compactNumber = (n: number) => compact.format(n)
 const decimal = (n: number) => n.toFixed(2)
-
-type RangeKey = GrowthRangeKey | "CUSTOM"
 
 const RANGES: RangeKey[] = ["3M", "6M", "12M", "ALL", "CUSTOM"]
 const RANGE_LABEL: Record<RangeKey, string> = {
@@ -74,38 +70,70 @@ function RangeSelector({
 function DatePicker({
   start,
   end,
-  onStart,
-  onEnd,
+  onApply,
 }: {
   start: string
   end: string
-  onStart: (v: string) => void
-  onEnd: (v: string) => void
+  onApply: (start: string, end: string) => void
 }) {
   const max = today()
+  const [draftStart, setDraftStart] = useState(start)
+  const [draftEnd, setDraftEnd] = useState(end)
+
+  // Reset the drafts whenever the committed range changes externally
+  // (e.g. switching between range presets and back to Custom).
+  useEffect(() => {
+    setDraftStart(start)
+    setDraftEnd(end)
+  }, [start, end])
+
+  const validYear = (v: string) => /^\d{4}-\d{2}-\d{2}$/.test(v)
+  const valid =
+    validYear(draftStart) &&
+    validYear(draftEnd) &&
+    draftStart <= draftEnd &&
+    draftEnd <= max
+  const dirty = draftStart !== start || draftEnd !== end
+
+  const inputCls =
+    "rounded-md border border-gray-200 bg-white px-2 py-1 text-gray-900 shadow-sm transition focus:border-gray-400 focus:outline-none focus:ring-1 focus:ring-gray-300 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-50 dark:focus:border-gray-600 dark:focus:ring-gray-700"
+
   return (
     <div className="flex flex-wrap items-center gap-2 text-xs">
       <label className="flex items-center gap-1.5 text-gray-600 dark:text-gray-400">
         From
         <input
           type="date"
-          value={start}
-          max={end || max}
-          onChange={(e) => onStart(e.target.value)}
-          className="rounded-md border border-gray-200 bg-white px-2 py-1 text-gray-900 shadow-sm transition focus:border-gray-400 focus:outline-none focus:ring-1 focus:ring-gray-300 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-50 dark:focus:border-gray-600 dark:focus:ring-gray-700"
+          value={draftStart}
+          max={draftEnd || max}
+          onChange={(e) => setDraftStart(e.target.value)}
+          className={inputCls}
         />
       </label>
       <label className="flex items-center gap-1.5 text-gray-600 dark:text-gray-400">
         To
         <input
           type="date"
-          value={end}
-          min={start}
+          value={draftEnd}
+          min={draftStart}
           max={max}
-          onChange={(e) => onEnd(e.target.value)}
-          className="rounded-md border border-gray-200 bg-white px-2 py-1 text-gray-900 shadow-sm transition focus:border-gray-400 focus:outline-none focus:ring-1 focus:ring-gray-300 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-50 dark:focus:border-gray-600 dark:focus:ring-gray-700"
+          onChange={(e) => setDraftEnd(e.target.value)}
+          className={inputCls}
         />
       </label>
+      <button
+        type="button"
+        disabled={!valid || !dirty}
+        onClick={() => onApply(draftStart, draftEnd)}
+        className={cx(
+          "rounded-md px-2.5 py-1 text-xs font-medium transition-colors",
+          valid && dirty
+            ? "bg-gray-900 text-white hover:bg-gray-800 dark:bg-gray-50 dark:text-gray-900 dark:hover:bg-gray-200"
+            : "cursor-not-allowed bg-gray-100 text-gray-400 dark:bg-gray-800 dark:text-gray-600",
+        )}
+      >
+        Apply
+      </button>
     </div>
   )
 }
@@ -242,82 +270,43 @@ export default function Dashboard({ data }: { data: DashboardData }) {
   const [range, setRange] = useState<RangeKey>("12M")
   const [customStart, setCustomStart] = useState<string>(monthsAgo(6))
   const [customEnd, setCustomEnd] = useState<string>(today())
-  const { totals, growth, catalogues, plans, raw } = data
 
-  const current = useMemo(() => {
-    if (range === "CUSTOM") {
-      return computeCustomGrowth(
-        raw.userCreatedAt,
-        raw.catalogueCreatedAt,
-        customStart,
-        customEnd,
-      )
-    }
-    return growth[range]
-  }, [range, customStart, customEnd, growth, raw])
+  const { start, end } = useMemo(
+    () => resolveRange(range, customStart, customEnd, data),
+    [range, customStart, customEnd, data],
+  )
 
-  const pageviewsSeries = useMemo(() => {
-    let start: string
-    let end: string
-    if (range === "CUSTOM") {
-      start = customStart
-      end = customEnd
-    } else {
-      end = today()
-      if (range === "3M") start = monthsAgo(3)
-      else if (range === "6M") start = monthsAgo(6)
-      else if (range === "12M") start = monthsAgo(12)
-      else start = raw.analyticsDaily[0]?.date ?? monthsAgo(12)
-    }
-    return computePageviewsForRange(raw.analyticsDaily, start, end)
-  }, [range, customStart, customEnd, raw.analyticsDaily])
+  const view = useMemo(
+    () => computeView(data, start, end),
+    [data, start, end],
+  )
+  const {
+    totals,
+    growth,
+    pageviewsSeries,
+    catalogues,
+    plans,
+    topCataloguesByPageviews,
+    topUsersByCatalogues,
+  } = view
 
   const animationKey =
     range === "CUSTOM" ? `custom-${customStart}-${customEnd}` : range
 
   return (
     <AuthGuard>
-    <main className="min-h-screen bg-gray-50 dark:bg-gray-950">
-      <Header />
+      <main className="min-h-screen bg-gray-50 dark:bg-gray-950">
+        <Header />
 
-      <div className="mx-auto max-w-7xl space-y-6 px-6 py-8">
-        {/* KPI row */}
-        <section className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-          <KpiCard
-            label="Total users"
-            value={number(totals.users)}
-            hint={`${number(totals.activeUsers)} active (have traffic)`}
-            accent="blue"
-          />
-          <KpiCard
-            label="Total catalogues"
-            value={number(totals.catalogues)}
-            hint={`${decimal(totals.avgCataloguesPerUser)} avg per user`}
-            accent="violet"
-          />
-          <KpiCard
-            label="Total pageviews"
-            value={compactNumber(totals.pageviews)}
-            hint={`${compactNumber(totals.uniqueVisitors)} unique visitors`}
-            accent="emerald"
-          />
-          <KpiCard
-            label="Avg catalogues / user"
-            value={decimal(totals.avgCataloguesPerUser)}
-            hint="catalogues/users"
-            accent="amber"
-          />
-        </section>
-
-        {/* Growth - split into separate Users and Catalogues charts, with range selector */}
-        <section className="space-y-3">
-          <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="mx-auto max-w-7xl space-y-6 px-6 py-8">
+          {/* Top-level time range — drives every chart below */}
+          <section className="flex flex-wrap items-end justify-between gap-3 border-b border-gray-200 pb-4 dark:border-gray-800">
             <div>
-              <h2 className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                Growth trends
-              </h2>
+              <h1 className="text-lg font-semibold text-gray-900 dark:text-gray-50">
+                Analytics
+              </h1>
               <p className="text-xs text-gray-500 dark:text-gray-400">
-                Cumulative totals over the selected period
+                All metrics reflect the selected period · {start} → {end}
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-3">
@@ -325,325 +314,415 @@ export default function Dashboard({ data }: { data: DashboardData }) {
                 <DatePicker
                   start={customStart}
                   end={customEnd}
-                  onStart={setCustomStart}
-                  onEnd={setCustomEnd}
+                  onApply={(s, e) => {
+                    setCustomStart(s)
+                    setCustomEnd(e)
+                  }}
                 />
               )}
               <RangeSelector value={range} onChange={setRange} />
             </div>
-          </div>
+          </section>
 
-          <div
-            key={animationKey}
-            className="animate-chart-in grid grid-cols-1 gap-6 lg:grid-cols-2"
+          {/* KPI row — in-range */}
+          <section
+            key={`${animationKey}-kpi`}
+            className="animate-chart-in grid grid-cols-2 gap-4 lg:grid-cols-4"
           >
-            <Card>
-              <div className="mb-4 flex items-baseline justify-between">
-                <div>
-                  <p className="text-xs text-gray-500 dark:text-gray-400">
-                    Users
-                  </p>
-                  <p className="text-2xl font-semibold tabular-nums text-gray-900 dark:text-gray-50">
-                    {number(
-                      current.users.cumulative[
-                        current.users.cumulative.length - 1
-                      ]?.Users ?? 0,
-                    )}
-                  </p>
-                </div>
-                <span className="rounded-full bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700 dark:bg-blue-950 dark:text-blue-300">
-                  Cumulative
-                </span>
-              </div>
-              <AreaChart
-                data={current.users.cumulative}
-                index="date"
-                categories={["Users"]}
-                colors={["blue"]}
-                valueFormatter={number}
-                showLegend={false}
-                yAxisWidth={56}
-                className="h-64 [&_.recharts-cartesian-axis-tick_text]:text-[10px]"
-              />
-            </Card>
-
-            <Card>
-              <div className="mb-4 flex items-baseline justify-between">
-                <div>
-                  <p className="text-xs text-gray-500 dark:text-gray-400">
-                    Catalogues
-                  </p>
-                  <p className="text-2xl font-semibold tabular-nums text-gray-900 dark:text-gray-50">
-                    {number(
-                      current.catalogues.cumulative[
-                        current.catalogues.cumulative.length - 1
-                      ]?.Catalogues ?? 0,
-                    )}
-                  </p>
-                </div>
-                <span className="rounded-full bg-violet-50 px-2 py-0.5 text-xs font-medium text-violet-700 dark:bg-violet-950 dark:text-violet-300">
-                  Cumulative
-                </span>
-              </div>
-              <AreaChart
-                data={current.catalogues.cumulative}
-                index="date"
-                categories={["Catalogues"]}
-                colors={["violet"]}
-                valueFormatter={number}
-                showLegend={false}
-                yAxisWidth={56}
-                className="h-64 [&_.recharts-cartesian-axis-tick_text]:text-[10px]"
-              />
-            </Card>
-          </div>
-
-          <div
-            key={`${animationKey}-monthly`}
-            className="animate-chart-in grid grid-cols-1 gap-6 lg:grid-cols-2"
-          >
-            <Card>
-              <p className="mb-2 text-xs text-gray-500 dark:text-gray-400">
-                New users per month
-              </p>
-              <BarChart
-                data={current.users.monthly}
-                index="date"
-                categories={["Users"]}
-                colors={["blue"]}
-                showLegend={false}
-                valueFormatter={number}
-                yAxisWidth={40}
-                className="h-52 [&_.recharts-cartesian-axis-tick_text]:text-[10px]"
-              />
-            </Card>
-            <Card>
-              <p className="mb-2 text-xs text-gray-500 dark:text-gray-400">
-                New catalogues per month
-              </p>
-              <BarChart
-                data={current.catalogues.monthly}
-                index="date"
-                categories={["Catalogues"]}
-                colors={["violet"]}
-                showLegend={false}
-                valueFormatter={number}
-                yAxisWidth={40}
-                className="h-52 [&_.recharts-cartesian-axis-tick_text]:text-[10px]"
-              />
-            </Card>
-          </div>
-        </section>
-
-        {/* Pageviews timeline (full width) - follows the selected range */}
-        <section className="space-y-3">
-          <div>
-            <h2 className="text-sm font-medium text-gray-700 dark:text-gray-300">
-              Pageviews
-            </h2>
-            <p className="text-xs text-gray-500 dark:text-gray-400">
-              Totals over the selected period
-            </p>
-          </div>
-          <Card>
-            <AreaChart
-              key={animationKey}
-              data={pageviewsSeries}
-              index="date"
-              categories={["Pageviews", "Unique visitors"]}
-              colors={["emerald", "cyan"]}
-              valueFormatter={number}
-              yAxisWidth={56}
-              startEndOnly
-              className="animate-chart-in h-64 [&_.recharts-cartesian-axis-tick_text]:text-[10px]"
+            <KpiCard
+              label="New users"
+              value={number(totals.users)}
+              hint={`${number(totals.activeUsers)} active (have traffic)`}
+              accent="blue"
             />
-          </Card>
-        </section>
+            <KpiCard
+              label="New catalogues"
+              value={number(totals.catalogues)}
+              hint={`${decimal(totals.avgCataloguesPerUser)} avg per new user`}
+              accent="violet"
+            />
+            <KpiCard
+              label="Pageviews"
+              value={compactNumber(totals.pageviews)}
+              hint={`${compactNumber(totals.uniqueVisitors)} unique visitors`}
+              accent="emerald"
+            />
+            <KpiCard
+              label="Catalogues / user"
+              value={decimal(totals.avgCataloguesPerUser)}
+              hint="in selected period"
+              accent="amber"
+            />
+          </section>
 
-        {/* Distribution - status donut, source bar, language bar - heights aligned */}
-        <section className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-          <div className="flex flex-col gap-3">
-            <h2 className="text-sm font-medium text-gray-700 dark:text-gray-300">
-              Catalogues by status
-            </h2>
-            <Card className="flex flex-1 flex-col">
-              <div className="flex flex-1 items-center justify-center">
-                <div className="relative h-44 w-44">
-                  <DonutChart
-                    data={catalogues.byStatus}
-                    category="name"
-                    value="value"
-                    colors={["blue", "amber", "emerald", "gray", "violet"]}
-                    valueFormatter={number}
-                    className="h-44 w-44"
-                  />
-                  <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
+          {/* Growth — cumulative resets to 0 at the start of the selected period */}
+          <section className="space-y-3">
+            <div>
+              <h2 className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                Growth trends
+              </h2>
+              <p className="text-xs text-gray-500 dark:text-gray-400">
+                Growth within the selected period
+              </p>
+            </div>
+
+            <div
+              key={animationKey}
+              className="animate-chart-in grid grid-cols-1 gap-6 lg:grid-cols-2"
+            >
+              <Card>
+                <div className="mb-4 flex items-baseline justify-between">
+                  <div>
                     <p className="text-xs text-gray-500 dark:text-gray-400">
-                      Total
+                      Users
                     </p>
                     <p className="text-2xl font-semibold tabular-nums text-gray-900 dark:text-gray-50">
-                      {number(totals.catalogues)}
+                      {number(
+                        growth.users.cumulative[
+                          growth.users.cumulative.length - 1
+                        ]?.Users ?? 0,
+                      )}
                     </p>
                   </div>
+                  <span className="rounded-full bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700 dark:bg-blue-950 dark:text-blue-300">
+                    Cumulative
+                  </span>
                 </div>
-              </div>
-              <div className="pt-4">
-                <DonutLegend data={catalogues.byStatus} />
-              </div>
-            </Card>
-          </div>
+                <AreaChart
+                  data={growth.users.cumulative}
+                  index="date"
+                  categories={["Users"]}
+                  colors={["blue"]}
+                  valueFormatter={number}
+                  showLegend={false}
+                  yAxisWidth={56}
+                  startEndOnly
+                  className="h-64 [&_.recharts-cartesian-axis-tick_text]:text-[10px]"
+                />
+              </Card>
 
-          <div className="flex flex-col gap-3">
-            <h2 className="text-sm font-medium text-gray-700 dark:text-gray-300">
-              Catalogues by source
-            </h2>
-            <Card className="flex flex-1 flex-col">
-              <BarChart
-                data={catalogues.bySource}
-                index="name"
-                categories={["value"]}
-                colors={["violet"]}
-                showLegend={false}
-                valueFormatter={number}
-                yAxisWidth={40}
-                className="h-full min-h-64 flex-1"
-              />
-            </Card>
-          </div>
+              <Card>
+                <div className="mb-4 flex items-baseline justify-between">
+                  <div>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">
+                      Catalogues
+                    </p>
+                    <p className="text-2xl font-semibold tabular-nums text-gray-900 dark:text-gray-50">
+                      {number(
+                        growth.catalogues.cumulative[
+                          growth.catalogues.cumulative.length - 1
+                        ]?.Catalogues ?? 0,
+                      )}
+                    </p>
+                  </div>
+                  <span className="rounded-full bg-violet-50 px-2 py-0.5 text-xs font-medium text-violet-700 dark:bg-violet-950 dark:text-violet-300">
+                    Cumulative
+                  </span>
+                </div>
+                <AreaChart
+                  data={growth.catalogues.cumulative}
+                  index="date"
+                  categories={["Catalogues"]}
+                  colors={["violet"]}
+                  valueFormatter={number}
+                  showLegend={false}
+                  yAxisWidth={56}
+                  startEndOnly
+                  className="h-64 [&_.recharts-cartesian-axis-tick_text]:text-[10px]"
+                />
+              </Card>
+            </div>
 
-          <div className="flex flex-col gap-3">
-            <h2 className="text-sm font-medium text-gray-700 dark:text-gray-300">
-              Catalogues by language
-            </h2>
-            <Card className="flex flex-1 flex-col">
-              <BarChart
-                data={catalogues.byLanguage}
-                index="name"
-                categories={["value"]}
-                colors={["cyan"]}
-                layout="vertical"
-                showLegend={false}
+            <div
+              key={`${animationKey}-bars`}
+              className="animate-chart-in grid grid-cols-1 gap-6 lg:grid-cols-2"
+            >
+              <Card>
+                <p className="mb-2 text-xs text-gray-500 dark:text-gray-400">
+                  New users
+                </p>
+                <BarChart
+                  data={growth.users.monthly}
+                  index="date"
+                  categories={["Users"]}
+                  colors={["blue"]}
+                  showLegend={false}
+                  valueFormatter={number}
+                  yAxisWidth={40}
+                  className="h-52 [&_.recharts-cartesian-axis-tick_text]:text-[10px]"
+                />
+              </Card>
+              <Card>
+                <p className="mb-2 text-xs text-gray-500 dark:text-gray-400">
+                  New catalogues
+                </p>
+                <BarChart
+                  data={growth.catalogues.monthly}
+                  index="date"
+                  categories={["Catalogues"]}
+                  colors={["violet"]}
+                  showLegend={false}
+                  valueFormatter={number}
+                  yAxisWidth={40}
+                  className="h-52 [&_.recharts-cartesian-axis-tick_text]:text-[10px]"
+                />
+              </Card>
+            </div>
+          </section>
+
+          {/* Pageviews */}
+          <section className="space-y-3">
+            <div>
+              <h2 className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                Pageviews
+              </h2>
+              <p className="text-xs text-gray-500 dark:text-gray-400">
+                Totals over the selected period
+              </p>
+            </div>
+            <Card>
+              <AreaChart
+                key={animationKey}
+                data={pageviewsSeries}
+                index="date"
+                categories={["Pageviews", "Unique visitors"]}
+                colors={["emerald", "cyan"]}
                 valueFormatter={number}
                 yAxisWidth={56}
-                className="h-full min-h-64 flex-1"
+                startEndOnly
+                className="animate-chart-in h-64 [&_.recharts-cartesian-axis-tick_text]:text-[10px]"
               />
             </Card>
-          </div>
-        </section>
+          </section>
 
-        {/* Users by plan */}
-        <section className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-          <div className="flex flex-col gap-3 lg:col-span-1">
-            <h2 className="text-sm font-medium text-gray-700 dark:text-gray-300">
-              Users by plan
-            </h2>
-            <Card className="flex flex-1 flex-col">
-              {plans.byUsers.length === 0 ? (
-                <p className="py-8 text-center text-sm text-gray-500 dark:text-gray-400">
-                  No data yet.
-                </p>
-              ) : (
-                <>
-                  <div className="flex flex-1 items-center justify-center">
-                    <div className="relative h-44 w-44">
-                      <DonutChart
-                        data={plans.byUsers}
-                        category="name"
-                        value="value"
-                        colors={["blue", "violet", "emerald", "amber", "cyan", "pink", "lime", "gray"]}
-                        valueFormatter={number}
-                        className="h-44 w-44"
-                      />
-                      <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
-                        <p className="text-xs text-gray-500 dark:text-gray-400">
-                          Users
-                        </p>
-                        <p className="text-2xl font-semibold tabular-nums text-gray-900 dark:text-gray-50">
-                          {number(totals.users)}
-                        </p>
+          {/* Distribution */}
+          <section
+            key={`${animationKey}-dist`}
+            className="animate-chart-in grid grid-cols-1 gap-6 lg:grid-cols-3"
+          >
+            <div className="flex flex-col gap-3">
+              <h2 className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                Catalogues by status
+              </h2>
+              <Card className="flex flex-1 flex-col">
+                {catalogues.byStatus.length === 0 ? (
+                  <p className="py-8 text-center text-sm text-gray-500 dark:text-gray-400">
+                    No data in this range.
+                  </p>
+                ) : (
+                  <>
+                    <div className="flex flex-1 items-center justify-center">
+                      <div className="relative h-44 w-44">
+                        <DonutChart
+                          data={catalogues.byStatus}
+                          category="name"
+                          value="value"
+                          colors={["blue", "amber", "emerald", "gray", "violet"]}
+                          valueFormatter={number}
+                          className="h-44 w-44"
+                        />
+                        <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
+                          <p className="text-xs text-gray-500 dark:text-gray-400">
+                            Total
+                          </p>
+                          <p className="text-2xl font-semibold tabular-nums text-gray-900 dark:text-gray-50">
+                            {number(totals.catalogues)}
+                          </p>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                  <div className="pt-4">
-                    <DonutLegend data={plans.byUsers} />
-                  </div>
-                </>
-              )}
-            </Card>
-          </div>
+                    <div className="pt-4">
+                      <DonutLegend data={catalogues.byStatus} />
+                    </div>
+                  </>
+                )}
+              </Card>
+            </div>
 
-          <div className="flex flex-col gap-3 lg:col-span-2">
-            <h2 className="text-sm font-medium text-gray-700 dark:text-gray-300">
-              Users per plan
-            </h2>
-            <Card className="flex flex-1 flex-col">
-              <BarChart
-                data={plans.byUsers}
-                index="name"
-                categories={["value"]}
-                colors={["blue"]}
-                showLegend={false}
-                valueFormatter={number}
-                yAxisWidth={40}
-                className="h-full min-h-64 flex-1"
-              />
-            </Card>
-          </div>
-        </section>
+            <div className="flex flex-col gap-3">
+              <h2 className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                Catalogues by source
+              </h2>
+              <Card className="flex flex-1 flex-col">
+                {catalogues.bySource.length === 0 ? (
+                  <p className="py-8 text-center text-sm text-gray-500 dark:text-gray-400">
+                    No data in this range.
+                  </p>
+                ) : (
+                  <BarChart
+                    data={catalogues.bySource}
+                    index="name"
+                    categories={["value"]}
+                    colors={["violet"]}
+                    showLegend={false}
+                    valueFormatter={number}
+                    yAxisWidth={40}
+                    className="h-full min-h-64 flex-1"
+                  />
+                )}
+              </Card>
+            </div>
 
-        {/* Rankings - reordered so business type is no longer directly below status */}
-        <section className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-          <div className="flex flex-col gap-3">
-            <h2 className="text-sm font-medium text-gray-700 dark:text-gray-300">
-              Top catalogues by pageviews
-            </h2>
-            <Card className="flex flex-1 flex-col">
-              <RankingList
-                rows={data.topCataloguesByPageviews}
-                valueLabel="Pageviews"
-                colorClass="bg-emerald-500"
-              />
-            </Card>
-          </div>
+            <div className="flex flex-col gap-3">
+              <h2 className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                Catalogues by language
+              </h2>
+              <Card className="flex flex-1 flex-col">
+                {catalogues.byLanguage.length === 0 ? (
+                  <p className="py-8 text-center text-sm text-gray-500 dark:text-gray-400">
+                    No data in this range.
+                  </p>
+                ) : (
+                  <BarChart
+                    data={catalogues.byLanguage}
+                    index="name"
+                    categories={["value"]}
+                    colors={["cyan"]}
+                    layout="vertical"
+                    showLegend={false}
+                    valueFormatter={number}
+                    yAxisWidth={56}
+                    className="h-full min-h-64 flex-1"
+                  />
+                )}
+              </Card>
+            </div>
+          </section>
 
-          <div className="flex flex-col gap-3">
-            <h2 className="text-sm font-medium text-gray-700 dark:text-gray-300">
-              Top creators by catalogue count
-            </h2>
-            <Card className="flex flex-1 flex-col">
-              <RankingList
-                rows={data.topUsersByCatalogues}
-                valueLabel="Catalogues"
-                colorClass="bg-blue-500"
-              />
-            </Card>
-          </div>
+          {/* Users by plan */}
+          <section
+            key={`${animationKey}-plans`}
+            className="animate-chart-in grid grid-cols-1 gap-6 lg:grid-cols-3"
+          >
+            <div className="flex flex-col gap-3 lg:col-span-1">
+              <h2 className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                Users by plan
+              </h2>
+              <Card className="flex flex-1 flex-col">
+                {plans.byUsers.length === 0 ? (
+                  <p className="py-8 text-center text-sm text-gray-500 dark:text-gray-400">
+                    No data in this range.
+                  </p>
+                ) : (
+                  <>
+                    <div className="flex flex-1 items-center justify-center">
+                      <div className="relative h-44 w-44">
+                        <DonutChart
+                          data={plans.byUsers}
+                          category="name"
+                          value="value"
+                          colors={[
+                            "blue",
+                            "violet",
+                            "emerald",
+                            "amber",
+                            "cyan",
+                            "pink",
+                            "lime",
+                            "gray",
+                          ]}
+                          valueFormatter={number}
+                          className="h-44 w-44"
+                        />
+                        <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
+                          <p className="text-xs text-gray-500 dark:text-gray-400">
+                            Users
+                          </p>
+                          <p className="text-2xl font-semibold tabular-nums text-gray-900 dark:text-gray-50">
+                            {number(totals.users)}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="pt-4">
+                      <DonutLegend data={plans.byUsers} />
+                    </div>
+                  </>
+                )}
+              </Card>
+            </div>
 
-          <div className="flex flex-col gap-3">
-            <h2 className="text-sm font-medium text-gray-700 dark:text-gray-300">
-              Catalogues by business type
-            </h2>
-            <Card className="flex flex-1 flex-col">
-              {catalogues.byBusinessType.length === 0 ? (
-                <p className="py-8 text-center text-sm text-gray-500 dark:text-gray-400">
-                  No data yet.
-                </p>
-              ) : (
+            <div className="flex flex-col gap-3 lg:col-span-2">
+              <h2 className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                Users per plan
+              </h2>
+              <Card className="flex flex-1 flex-col">
+                {plans.byUsers.length === 0 ? (
+                  <p className="py-8 text-center text-sm text-gray-500 dark:text-gray-400">
+                    No data in this range.
+                  </p>
+                ) : (
+                  <BarChart
+                    data={plans.byUsers}
+                    index="name"
+                    categories={["value"]}
+                    colors={["blue"]}
+                    showLegend={false}
+                    valueFormatter={number}
+                    yAxisWidth={40}
+                    className="h-full min-h-64 flex-1"
+                  />
+                )}
+              </Card>
+            </div>
+          </section>
+
+          {/* Rankings */}
+          <section
+            key={`${animationKey}-rank`}
+            className="animate-chart-in grid grid-cols-1 gap-6 lg:grid-cols-3"
+          >
+            <div className="flex flex-col gap-3">
+              <h2 className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                Top catalogues by pageviews
+              </h2>
+              <Card className="flex flex-1 flex-col">
                 <RankingList
-                  rows={catalogues.byBusinessType.map((b) => ({
-                    id: b.name,
-                    name: b.name,
-                    value: b.value,
-                  }))}
-                  valueLabel="Catalogues"
-                  colorClass="bg-pink-500"
+                  rows={topCataloguesByPageviews}
+                  valueLabel="Pageviews"
+                  colorClass="bg-emerald-500"
                 />
-              )}
-            </Card>
-          </div>
-        </section>
-      </div>
-    </main>
+              </Card>
+            </div>
+
+            <div className="flex flex-col gap-3">
+              <h2 className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                Top creators by catalogue count
+              </h2>
+              <Card className="flex flex-1 flex-col">
+                <RankingList
+                  rows={topUsersByCatalogues}
+                  valueLabel="Catalogues"
+                  colorClass="bg-blue-500"
+                />
+              </Card>
+            </div>
+
+            <div className="flex flex-col gap-3">
+              <h2 className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                Catalogues by business type
+              </h2>
+              <Card className="flex flex-1 flex-col">
+                {catalogues.byBusinessType.length === 0 ? (
+                  <p className="py-8 text-center text-sm text-gray-500 dark:text-gray-400">
+                    No data in this range.
+                  </p>
+                ) : (
+                  <RankingList
+                    rows={catalogues.byBusinessType.map((b) => ({
+                      id: b.name,
+                      name: b.name,
+                      value: b.value,
+                    }))}
+                    valueLabel="Catalogues"
+                    colorClass="bg-pink-500"
+                  />
+                )}
+              </Card>
+            </div>
+          </section>
+        </div>
+      </main>
     </AuthGuard>
   )
 }
