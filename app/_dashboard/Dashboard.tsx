@@ -226,8 +226,19 @@ function RankingList({
   )
 }
 
-const CATALOGUE_STATUS_COLORS = ["blue", "amber", "emerald", "gray", "violet"]
-const PLAN_COLORS = [
+type DonutColor =
+  | "blue"
+  | "emerald"
+  | "violet"
+  | "amber"
+  | "gray"
+  | "cyan"
+  | "pink"
+  | "lime"
+  | "fuchsia"
+
+const CATALOGUE_STATUS_COLORS: DonutColor[] = ["blue", "amber", "emerald", "gray", "violet"]
+const PLAN_COLORS: DonutColor[] = [
   "blue",
   "violet",
   "emerald",
