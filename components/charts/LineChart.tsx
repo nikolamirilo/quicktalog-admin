@@ -610,7 +610,7 @@ const LineChart = React.forwardRef<HTMLDivElement, LineChartProps>(
               hide={!showXAxis}
               dataKey={index}
               interval={startEndOnly ? "preserveStartEnd" : intervalType}
-              tick={{ transform: "translate(0, 6)" }}
+              tick={{ transform: "translate(0, 6)", fontSize: 11.5 }}
               ticks={
                 startEndOnly
                   ? [data[0][index], data[data.length - 1][index]]
@@ -618,7 +618,7 @@ const LineChart = React.forwardRef<HTMLDivElement, LineChartProps>(
               }
               fill=""
               stroke=""
-              className={cx("text-xs", "fill-gray-500 dark:fill-gray-500")}
+              className={cx("text-[11.5px]", "fill-gray-500 dark:fill-gray-500")}
               tickLine={false}
               axisLine={false}
               minTickGap={tickGap}
@@ -640,10 +640,10 @@ const LineChart = React.forwardRef<HTMLDivElement, LineChartProps>(
               tickLine={false}
               type="number"
               domain={yAxisDomain as AxisDomain}
-              tick={{ transform: "translate(-3, 0)" }}
+              tick={{ transform: "translate(-3, 0)", fontSize: 11.5 }}
               fill=""
               stroke=""
-              className={cx("text-xs", "fill-gray-500 dark:fill-gray-500")}
+              className={cx("text-[11.5px]", "fill-gray-500 dark:fill-gray-500")}
               tickFormatter={valueFormatter}
               allowDecimals={allowDecimals}
             >

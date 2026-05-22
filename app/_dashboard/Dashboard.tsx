@@ -226,28 +226,47 @@ function RankingList({
   )
 }
 
-const palette = [
-  "bg-blue-500",
-  "bg-violet-500",
-  "bg-emerald-500",
-  "bg-amber-500",
-  "bg-cyan-500",
-  "bg-pink-500",
-  "bg-lime-500",
-  "bg-fuchsia-500",
-  "bg-gray-500",
+const CATALOGUE_STATUS_COLORS = ["blue", "amber", "emerald", "gray", "violet"]
+const PLAN_COLORS = [
+  "blue",
+  "violet",
+  "emerald",
+  "amber",
+  "cyan",
+  "pink",
+  "lime",
+  "gray",
 ]
 
-function DonutLegend({ data }: { data: { name: string; value: number }[] }) {
+const SWATCH: Record<string, string> = {
+  blue: "bg-blue-500",
+  violet: "bg-violet-500",
+  emerald: "bg-emerald-500",
+  amber: "bg-amber-500",
+  cyan: "bg-cyan-500",
+  pink: "bg-pink-500",
+  lime: "bg-lime-500",
+  fuchsia: "bg-fuchsia-500",
+  gray: "bg-gray-500",
+}
+
+function DonutLegend({
+  data,
+  colors,
+}: {
+  data: { name: string; value: number }[]
+  colors: string[]
+}) {
   const total = data.reduce((s, d) => s + d.value, 0)
   return (
     <ul className="grid w-full grid-cols-1 gap-x-6 gap-y-2 text-sm sm:grid-cols-2">
       {data.map((d, i) => {
         const pct = total ? ((d.value / total) * 100).toFixed(1) : "0.0"
+        const swatch = SWATCH[colors[i % colors.length]] ?? "bg-gray-500"
         return (
           <li key={d.name} className="flex items-center gap-2">
             <span
-              className={`size-2.5 rounded-full ${palette[i % palette.length]}`}
+              className={`size-2.5 rounded-full ${swatch}`}
               aria-hidden
             />
             <span className="flex-1 truncate text-gray-700 dark:text-gray-300">
@@ -358,7 +377,7 @@ export default function Dashboard({ data }: { data: DashboardData }) {
           {/* Growth — cumulative resets to 0 at the start of the selected period */}
           <section className="space-y-3">
             <div>
-              <h2 className="text-sm font-medium text-gray-700 dark:text-gray-300">
+              <h2 className="text-base font-semibold text-gray-700 dark:text-gray-300">
                 Growth trends
               </h2>
               <p className="text-xs text-gray-500 dark:text-gray-400">
@@ -373,7 +392,7 @@ export default function Dashboard({ data }: { data: DashboardData }) {
               <Card>
                 <div className="mb-4 flex items-baseline justify-between">
                   <div>
-                    <p className="text-xs text-gray-500 dark:text-gray-400">
+                    <p className="text-base font-semibold text-gray-700 dark:text-gray-300">
                       Users
                     </p>
                     <p className="text-2xl font-semibold tabular-nums text-gray-900 dark:text-gray-50">
@@ -397,14 +416,14 @@ export default function Dashboard({ data }: { data: DashboardData }) {
                   showLegend={false}
                   yAxisWidth={56}
                   startEndOnly
-                  className="h-64 [&_.recharts-cartesian-axis-tick_text]:text-[10px]"
+                  className="h-64"
                 />
               </Card>
 
               <Card>
                 <div className="mb-4 flex items-baseline justify-between">
                   <div>
-                    <p className="text-xs text-gray-500 dark:text-gray-400">
+                    <p className="text-base font-semibold text-gray-700 dark:text-gray-300">
                       Catalogues
                     </p>
                     <p className="text-2xl font-semibold tabular-nums text-gray-900 dark:text-gray-50">
@@ -428,7 +447,7 @@ export default function Dashboard({ data }: { data: DashboardData }) {
                   showLegend={false}
                   yAxisWidth={56}
                   startEndOnly
-                  className="h-64 [&_.recharts-cartesian-axis-tick_text]:text-[10px]"
+                  className="h-64"
                 />
               </Card>
             </div>
@@ -438,7 +457,7 @@ export default function Dashboard({ data }: { data: DashboardData }) {
               className="animate-chart-in grid grid-cols-1 gap-6 lg:grid-cols-2"
             >
               <Card>
-                <p className="mb-2 text-xs text-gray-500 dark:text-gray-400">
+                <p className="mb-2 text-base font-semibold text-gray-700 dark:text-gray-300">
                   New users
                 </p>
                 <BarChart
@@ -449,11 +468,11 @@ export default function Dashboard({ data }: { data: DashboardData }) {
                   showLegend={false}
                   valueFormatter={number}
                   yAxisWidth={40}
-                  className="h-52 [&_.recharts-cartesian-axis-tick_text]:text-[10px]"
+                  className="h-52"
                 />
               </Card>
               <Card>
-                <p className="mb-2 text-xs text-gray-500 dark:text-gray-400">
+                <p className="mb-2 text-base font-semibold text-gray-700 dark:text-gray-300">
                   New catalogues
                 </p>
                 <BarChart
@@ -464,7 +483,7 @@ export default function Dashboard({ data }: { data: DashboardData }) {
                   showLegend={false}
                   valueFormatter={number}
                   yAxisWidth={40}
-                  className="h-52 [&_.recharts-cartesian-axis-tick_text]:text-[10px]"
+                  className="h-52"
                 />
               </Card>
             </div>
@@ -473,7 +492,7 @@ export default function Dashboard({ data }: { data: DashboardData }) {
           {/* Pageviews */}
           <section className="space-y-3">
             <div>
-              <h2 className="text-sm font-medium text-gray-700 dark:text-gray-300">
+              <h2 className="text-base font-semibold text-gray-700 dark:text-gray-300">
                 Pageviews
               </h2>
               <p className="text-xs text-gray-500 dark:text-gray-400">
@@ -490,7 +509,7 @@ export default function Dashboard({ data }: { data: DashboardData }) {
                 valueFormatter={number}
                 yAxisWidth={56}
                 startEndOnly
-                className="animate-chart-in h-64 [&_.recharts-cartesian-axis-tick_text]:text-[10px]"
+                className="animate-chart-in h-64"
               />
             </Card>
           </section>
@@ -501,7 +520,7 @@ export default function Dashboard({ data }: { data: DashboardData }) {
             className="animate-chart-in grid grid-cols-1 gap-6 lg:grid-cols-3"
           >
             <div className="flex flex-col gap-3">
-              <h2 className="text-sm font-medium text-gray-700 dark:text-gray-300">
+              <h2 className="text-base font-semibold text-gray-700 dark:text-gray-300">
                 Catalogues by status
               </h2>
               <Card className="flex flex-1 flex-col">
@@ -517,7 +536,7 @@ export default function Dashboard({ data }: { data: DashboardData }) {
                           data={catalogues.byStatus}
                           category="name"
                           value="value"
-                          colors={["blue", "amber", "emerald", "gray", "violet"]}
+                          colors={CATALOGUE_STATUS_COLORS}
                           valueFormatter={number}
                           className="h-44 w-44"
                         />
@@ -532,7 +551,10 @@ export default function Dashboard({ data }: { data: DashboardData }) {
                       </div>
                     </div>
                     <div className="pt-4">
-                      <DonutLegend data={catalogues.byStatus} />
+                      <DonutLegend
+                        data={catalogues.byStatus}
+                        colors={CATALOGUE_STATUS_COLORS}
+                      />
                     </div>
                   </>
                 )}
@@ -540,7 +562,7 @@ export default function Dashboard({ data }: { data: DashboardData }) {
             </div>
 
             <div className="flex flex-col gap-3">
-              <h2 className="text-sm font-medium text-gray-700 dark:text-gray-300">
+              <h2 className="text-base font-semibold text-gray-700 dark:text-gray-300">
                 Catalogues by source
               </h2>
               <Card className="flex flex-1 flex-col">
@@ -564,7 +586,7 @@ export default function Dashboard({ data }: { data: DashboardData }) {
             </div>
 
             <div className="flex flex-col gap-3">
-              <h2 className="text-sm font-medium text-gray-700 dark:text-gray-300">
+              <h2 className="text-base font-semibold text-gray-700 dark:text-gray-300">
                 Catalogues by language
               </h2>
               <Card className="flex flex-1 flex-col">
@@ -595,7 +617,7 @@ export default function Dashboard({ data }: { data: DashboardData }) {
             className="animate-chart-in grid grid-cols-1 gap-6 lg:grid-cols-3"
           >
             <div className="flex flex-col gap-3 lg:col-span-1">
-              <h2 className="text-sm font-medium text-gray-700 dark:text-gray-300">
+              <h2 className="text-base font-semibold text-gray-700 dark:text-gray-300">
                 Users by plan
               </h2>
               <Card className="flex flex-1 flex-col">
@@ -611,16 +633,7 @@ export default function Dashboard({ data }: { data: DashboardData }) {
                           data={plans.byUsers}
                           category="name"
                           value="value"
-                          colors={[
-                            "blue",
-                            "violet",
-                            "emerald",
-                            "amber",
-                            "cyan",
-                            "pink",
-                            "lime",
-                            "gray",
-                          ]}
+                          colors={PLAN_COLORS}
                           valueFormatter={number}
                           className="h-44 w-44"
                         />
@@ -635,7 +648,7 @@ export default function Dashboard({ data }: { data: DashboardData }) {
                       </div>
                     </div>
                     <div className="pt-4">
-                      <DonutLegend data={plans.byUsers} />
+                      <DonutLegend data={plans.byUsers} colors={PLAN_COLORS} />
                     </div>
                   </>
                 )}
@@ -643,7 +656,7 @@ export default function Dashboard({ data }: { data: DashboardData }) {
             </div>
 
             <div className="flex flex-col gap-3 lg:col-span-2">
-              <h2 className="text-sm font-medium text-gray-700 dark:text-gray-300">
+              <h2 className="text-base font-semibold text-gray-700 dark:text-gray-300">
                 Users per plan
               </h2>
               <Card className="flex flex-1 flex-col">
@@ -673,7 +686,7 @@ export default function Dashboard({ data }: { data: DashboardData }) {
             className="animate-chart-in grid grid-cols-1 gap-6 lg:grid-cols-3"
           >
             <div className="flex flex-col gap-3">
-              <h2 className="text-sm font-medium text-gray-700 dark:text-gray-300">
+              <h2 className="text-base font-semibold text-gray-700 dark:text-gray-300">
                 Top catalogues by pageviews
               </h2>
               <Card className="flex flex-1 flex-col">
@@ -686,7 +699,7 @@ export default function Dashboard({ data }: { data: DashboardData }) {
             </div>
 
             <div className="flex flex-col gap-3">
-              <h2 className="text-sm font-medium text-gray-700 dark:text-gray-300">
+              <h2 className="text-base font-semibold text-gray-700 dark:text-gray-300">
                 Top creators by catalogue count
               </h2>
               <Card className="flex flex-1 flex-col">
@@ -699,7 +712,7 @@ export default function Dashboard({ data }: { data: DashboardData }) {
             </div>
 
             <div className="flex flex-col gap-3">
-              <h2 className="text-sm font-medium text-gray-700 dark:text-gray-300">
+              <h2 className="text-base font-semibold text-gray-700 dark:text-gray-300">
                 Catalogues by business type
               </h2>
               <Card className="flex flex-1 flex-col">
