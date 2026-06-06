@@ -105,7 +105,7 @@ export function resolveRange(
       end: todayISO,
     }
   }
-  const months = ({ "3M": 3, "6M": 6, "12M": 12 } as const)[rangeKey]
+  const months = ({ "1M": 1, "3M": 3, "6M": 6, "12M": 12 } as const)[rangeKey]
   const d = new Date()
   d.setUTCMonth(d.getUTCMonth() - months)
   return { start: d.toISOString().slice(0, 10), end: todayISO }

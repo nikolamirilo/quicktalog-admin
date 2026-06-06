@@ -14,7 +14,7 @@ export type Ranking = {
   meta?: string
 }
 
-export type RangeKey = "3M" | "6M" | "12M" | "ALL" | "CUSTOM"
+export type RangeKey = "1M" | "3M" | "6M" | "12M" | "ALL" | "CUSTOM"
 
 export type UserRow = {
   id: string
