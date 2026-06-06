@@ -22,8 +22,9 @@ const number = (n: number) => intl.format(n)
 const compactNumber = (n: number) => compact.format(n)
 const decimal = (n: number) => n.toFixed(2)
 
-const RANGES: RangeKey[] = ["3M", "6M", "12M", "ALL", "CUSTOM"]
+const RANGES: RangeKey[] = ["1M", "3M", "6M", "12M", "ALL", "CUSTOM"]
 const RANGE_LABEL: Record<RangeKey, string> = {
+  "1M": "1M",
   "3M": "3M",
   "6M": "6M",
   "12M": "12M",
