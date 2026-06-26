@@ -7,6 +7,7 @@ import {
   BarChart,
   Card,
   DonutChart,
+  LineChart,
 } from "@/components/charts"
 import { cx } from "@/lib/utils/cx"
 
@@ -21,6 +22,15 @@ const compact = new Intl.NumberFormat("en-US", { notation: "compact" })
 const number = (n: number) => intl.format(n)
 const compactNumber = (n: number) => compact.format(n)
 const decimal = (n: number) => n.toFixed(2)
+const pct = (n: number) => `${n}%`
+const moneyFmt = new Intl.NumberFormat("en-US", {
+  style: "currency",
+  currency: "EUR",
+  maximumFractionDigits: 0,
+})
+const money = (n: number) => moneyFmt.format(n)
+const toRanking = (rows: { name: string; value: number }[]): Ranking[] =>
+  rows.map((b) => ({ id: b.name, name: b.name, value: b.value }))
 
 const RANGES: RangeKey[] = ["1M", "3M", "6M", "12M", "ALL", "CUSTOM"]
 const RANGE_LABEL: Record<RangeKey, string> = {
@@ -148,13 +158,23 @@ function KpiCard({
   label: string
   value: string
   hint?: string
-  accent?: "blue" | "violet" | "emerald" | "amber"
+  accent?:
+    | "blue"
+    | "violet"
+    | "emerald"
+    | "amber"
+    | "cyan"
+    | "pink"
+    | "gray"
 }) {
   const dot = {
     blue: "bg-blue-500",
     violet: "bg-violet-500",
     emerald: "bg-emerald-500",
     amber: "bg-amber-500",
+    cyan: "bg-cyan-500",
+    pink: "bg-pink-500",
+    gray: "bg-gray-500",
   }[accent ?? "blue"]
   return (
     <Card className="p-5">
@@ -171,6 +191,19 @@ function KpiCard({
         <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">{hint}</p>
       )}
     </Card>
+  )
+}
+
+function KpiInline({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-md bg-gray-50 px-2.5 py-1.5 dark:bg-gray-800/60">
+      <p className="text-[10px] font-medium tracking-wide text-gray-500 uppercase dark:text-gray-400">
+        {label}
+      </p>
+      <p className="text-sm font-semibold tabular-nums text-gray-900 dark:text-gray-50">
+        {value}
+      </p>
+    </div>
   )
 }
 
@@ -319,6 +352,14 @@ export default function Dashboard({ data }: { data: DashboardData }) {
     plans,
     topCataloguesByPageviews,
     topUsersByCatalogues,
+    activation,
+    creators,
+    engagement,
+    content,
+    freshness,
+    subscriptions,
+    revenue,
+    features,
   } = view
 
   const animationKey =
@@ -384,6 +425,424 @@ export default function Dashboard({ data }: { data: DashboardData }) {
               hint="in selected period"
               accent="amber"
             />
+          </section>
+
+          {/* ════════ Activation & engagement ════════ */}
+          <section className="space-y-3">
+            <div>
+              <h2 className="text-base font-semibold text-gray-700 dark:text-gray-300">
+                Activation &amp; engagement
+              </h2>
+              <p className="text-xs text-gray-500 dark:text-gray-400">
+                Are signups reaching value, and are catalogues alive?
+              </p>
+            </div>
+
+            {/* Activation / engagement KPIs */}
+            <div
+              key={`${animationKey}-act-kpi`}
+              className="animate-chart-in grid grid-cols-2 gap-4 lg:grid-cols-4"
+            >
+              <KpiCard
+                label="Activation rate"
+                value={pct(activation.activationRate)}
+                hint="new users who created a catalogue"
+                accent="blue"
+              />
+              <KpiCard
+                label="Time to first catalogue"
+                value={
+                  activation.medianTtvDays == null
+                    ? "—"
+                    : `${activation.medianTtvDays} d`
+                }
+                hint="median, signup → first catalogue"
+                accent="violet"
+              />
+              <KpiCard
+                label="Ghost users"
+                value={number(creators.ghostUsers)}
+                hint={`${pct(creators.ghostPct)} of all users · 0 catalogues`}
+                accent="amber"
+              />
+              <KpiCard
+                label="Dead catalogues"
+                value={pct(engagement.deadPct)}
+                hint="published, 0 views this period"
+                accent="pink"
+              />
+            </div>
+
+            {/* Activation funnel + activation rate by cohort */}
+            <div
+              key={`${animationKey}-act-funnel`}
+              className="animate-chart-in grid grid-cols-1 gap-6 lg:grid-cols-2"
+            >
+              <div className="flex flex-col gap-3">
+                <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300">
+                  Activation funnel
+                </h3>
+                <Card className="flex flex-1 flex-col">
+                  <RankingList
+                    rows={toRanking(activation.funnel)}
+                    valueLabel="Users"
+                    colorClass="bg-blue-500"
+                  />
+                  <p className="mt-4 text-xs text-gray-500 dark:text-gray-400">
+                    {pct(activation.publishRate)} of new catalogues are published ·{" "}
+                    {pct(activation.visitorRate)} of publishers got a visitor
+                  </p>
+                </Card>
+              </div>
+              <div className="flex flex-col gap-3">
+                <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300">
+                  Activation rate by signup cohort
+                </h3>
+                <Card className="flex flex-1 flex-col">
+                  <LineChart
+                    data={activation.rateByCohort}
+                    index="date"
+                    categories={["Activation %"]}
+                    colors={["blue"]}
+                    valueFormatter={pct}
+                    showLegend={false}
+                    yAxisWidth={44}
+                    className="h-full min-h-56 flex-1"
+                  />
+                </Card>
+              </div>
+            </div>
+
+            {/* Creator distribution + views distribution */}
+            <div
+              key={`${animationKey}-act-dist`}
+              className="animate-chart-in grid grid-cols-1 gap-6 lg:grid-cols-2"
+            >
+              <div className="flex flex-col gap-3">
+                <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300">
+                  Catalogues per user
+                </h3>
+                <Card className="flex flex-1 flex-col">
+                  <BarChart
+                    data={creators.distribution}
+                    index="name"
+                    categories={["value"]}
+                    colors={["violet"]}
+                    showLegend={false}
+                    valueFormatter={number}
+                    yAxisWidth={44}
+                    className="h-full min-h-56 flex-1"
+                  />
+                </Card>
+              </div>
+              <div className="flex flex-col gap-3">
+                <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300">
+                  Views per published catalogue
+                </h3>
+                <Card className="flex flex-1 flex-col">
+                  <BarChart
+                    data={engagement.viewsBuckets}
+                    index="name"
+                    categories={["value"]}
+                    colors={["emerald"]}
+                    showLegend={false}
+                    valueFormatter={number}
+                    yAxisWidth={44}
+                    className="h-full min-h-56 flex-1"
+                  />
+                </Card>
+              </div>
+            </div>
+
+            {/* Active catalogues over time */}
+            <div
+              key={`${animationKey}-act-active`}
+              className="animate-chart-in space-y-3"
+            >
+              <Card>
+                <div className="mb-4 flex flex-wrap items-baseline justify-between gap-2">
+                  <div>
+                    <p className="text-base font-semibold text-gray-700 dark:text-gray-300">
+                      Active catalogues over time
+                    </p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">
+                      Catalogues receiving ≥1 view per period
+                    </p>
+                  </div>
+                  <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300">
+                    Top 10% = {pct(engagement.paretoTopShare)} of views ·{" "}
+                    {engagement.repeatRatio}× views/visitor
+                  </span>
+                </div>
+                <AreaChart
+                  data={engagement.activeOverTime}
+                  index="date"
+                  categories={["Active catalogues"]}
+                  colors={["emerald"]}
+                  valueFormatter={number}
+                  showLegend={false}
+                  yAxisWidth={44}
+                  startEndOnly
+                  className="h-56"
+                />
+              </Card>
+            </div>
+
+            {/* Content depth + freshness */}
+            <div
+              key={`${animationKey}-act-content`}
+              className="animate-chart-in grid grid-cols-1 gap-6 lg:grid-cols-2"
+            >
+              <div className="flex flex-col gap-3">
+                <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300">
+                  Content completeness (% of new catalogues)
+                </h3>
+                <Card className="flex flex-1 flex-col">
+                  <p className="mb-3 text-xs text-gray-500 dark:text-gray-400">
+                    Avg {content.avgSections} sections · {content.avgItems} items
+                    per catalogue
+                  </p>
+                  <BarChart
+                    data={content.completeness}
+                    index="name"
+                    categories={["value"]}
+                    colors={["cyan"]}
+                    layout="vertical"
+                    showLegend={false}
+                    valueFormatter={pct}
+                    yAxisWidth={88}
+                    className="h-full min-h-56 flex-1"
+                  />
+                </Card>
+              </div>
+              <div className="flex flex-col gap-3">
+                <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300">
+                  Catalogue freshness (published)
+                </h3>
+                <Card className="flex flex-1 flex-col">
+                  <p className="mb-3 text-xs text-gray-500 dark:text-gray-400">
+                    {pct(freshness.pctEdited)} edited after creation ·{" "}
+                    {pct(freshness.pctStale)} stale (&gt;90d)
+                    {freshness.medianDaysSinceEdit != null
+                      ? ` · median ${freshness.medianDaysSinceEdit}d since edit`
+                      : ""}
+                  </p>
+                  <BarChart
+                    data={freshness.recencyBuckets}
+                    index="name"
+                    categories={["value"]}
+                    colors={["amber"]}
+                    showLegend={false}
+                    valueFormatter={number}
+                    yAxisWidth={44}
+                    className="h-full min-h-56 flex-1"
+                  />
+                </Card>
+              </div>
+            </div>
+          </section>
+
+          {/* ════════ Revenue & retention ════════ */}
+          <section className="space-y-3">
+            <div>
+              <h2 className="text-base font-semibold text-gray-700 dark:text-gray-300">
+                Revenue &amp; retention
+              </h2>
+              <p className="text-xs text-gray-500 dark:text-gray-400">
+                Current subscription state · are we converting and keeping payers?
+              </p>
+            </div>
+
+            <div
+              key={`${animationKey}-rev-kpi`}
+              className="animate-chart-in grid grid-cols-2 gap-4 lg:grid-cols-4"
+            >
+              <KpiCard
+                label="Active payers"
+                value={number(revenue.activePayers)}
+                hint={
+                  revenue.mrr != null
+                    ? `${money(revenue.mrr)} MRR · ${money(revenue.arr ?? 0)} ARR`
+                    : "MRR needs Paddle price sync"
+                }
+                accent="emerald"
+              />
+              <KpiCard
+                label="Paid conversion"
+                value={pct(subscriptions.paidConversionPct)}
+                hint="active payers ÷ all users"
+                accent="blue"
+              />
+              <KpiCard
+                label="Churn rate"
+                value={pct(subscriptions.churnRate)}
+                hint="canceled ÷ (active + canceled)"
+                accent="pink"
+              />
+              <KpiCard
+                label="Scheduled cancellations"
+                value={number(subscriptions.scheduledCancellations)}
+                hint="upcoming churn (early warning)"
+                accent="amber"
+              />
+            </div>
+
+            <div
+              key={`${animationKey}-rev-funnel`}
+              className="animate-chart-in grid grid-cols-1 gap-6 lg:grid-cols-3"
+            >
+              <div className="flex flex-col gap-3">
+                <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300">
+                  Conversion funnel
+                </h3>
+                <Card className="flex flex-1 flex-col">
+                  <RankingList
+                    rows={toRanking(subscriptions.conversionFunnel)}
+                    valueLabel="Customers"
+                    colorClass="bg-emerald-500"
+                  />
+                </Card>
+              </div>
+              <div className="flex flex-col gap-3">
+                <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300">
+                  Subscription status
+                </h3>
+                <Card className="flex flex-1 flex-col">
+                  {subscriptions.statusMix.length === 0 ? (
+                    <p className="py-8 text-center text-sm text-gray-500 dark:text-gray-400">
+                      No subscriptions.
+                    </p>
+                  ) : (
+                    <>
+                      <div className="flex flex-1 items-center justify-center">
+                        <DonutChart
+                          data={subscriptions.statusMix}
+                          category="name"
+                          value="value"
+                          colors={PLAN_COLORS}
+                          valueFormatter={number}
+                          className="h-44 w-44"
+                        />
+                      </div>
+                      <div className="pt-4">
+                        <DonutLegend
+                          data={subscriptions.statusMix}
+                          colors={PLAN_COLORS}
+                        />
+                      </div>
+                    </>
+                  )}
+                </Card>
+              </div>
+              <div className="flex flex-col gap-3">
+                <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300">
+                  Active payers by plan
+                </h3>
+                <Card className="flex flex-1 flex-col">
+                  {revenue.byPlan.length === 0 ? (
+                    <p className="py-8 text-center text-sm text-gray-500 dark:text-gray-400">
+                      No active payers.
+                    </p>
+                  ) : (
+                    <BarChart
+                      data={revenue.byPlan}
+                      index="name"
+                      categories={["value"]}
+                      colors={["emerald"]}
+                      layout="vertical"
+                      showLegend={false}
+                      valueFormatter={number}
+                      yAxisWidth={88}
+                      className="h-full min-h-56 flex-1"
+                    />
+                  )}
+                </Card>
+              </div>
+            </div>
+
+            <div
+              key={`${animationKey}-rev-trend`}
+              className="animate-chart-in"
+            >
+              <Card>
+                <p className="mb-2 text-base font-semibold text-gray-700 dark:text-gray-300">
+                  New subscriptions over time
+                </p>
+                <AreaChart
+                  data={subscriptions.newOverTime}
+                  index="date"
+                  categories={["New subscriptions"]}
+                  colors={["violet"]}
+                  valueFormatter={number}
+                  showLegend={false}
+                  yAxisWidth={44}
+                  startEndOnly
+                  className="h-52"
+                />
+              </Card>
+            </div>
+          </section>
+
+          {/* ════════ Feature adoption ════════ */}
+          <section className="space-y-3">
+            <div>
+              <h2 className="text-base font-semibold text-gray-700 dark:text-gray-300">
+                Feature adoption
+              </h2>
+              <p className="text-xs text-gray-500 dark:text-gray-400">
+                Which features earn their keep? (all-time volume)
+              </p>
+            </div>
+
+            <div
+              key={`${animationKey}-feat`}
+              className="animate-chart-in grid grid-cols-1 gap-6 lg:grid-cols-3"
+            >
+              <div className="flex flex-col gap-3">
+                <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300">
+                  Adoption by feature
+                </h3>
+                <Card className="flex flex-1 flex-col">
+                  <div className="mb-3 flex flex-wrap gap-3">
+                    <KpiInline
+                      label="AI catalogues"
+                      value={pct(features.aiCataloguePct)}
+                    />
+                    <KpiInline
+                      label="QR adoption"
+                      value={pct(features.qrAdoptionPct)}
+                    />
+                  </div>
+                  <BarChart
+                    data={features.adoption}
+                    index="name"
+                    categories={["value"]}
+                    colors={["pink"]}
+                    layout="vertical"
+                    showLegend={false}
+                    valueFormatter={number}
+                    yAxisWidth={104}
+                    className="h-full min-h-56 flex-1"
+                  />
+                </Card>
+              </div>
+              <div className="flex flex-col gap-3 lg:col-span-2">
+                <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300">
+                  AI &amp; OCR usage over time
+                </h3>
+                <Card className="flex flex-1 flex-col">
+                  <LineChart
+                    data={features.usageOverTime}
+                    index="date"
+                    categories={["AI generations", "OCR scans"]}
+                    colors={["violet", "cyan"]}
+                    valueFormatter={number}
+                    yAxisWidth={44}
+                    className="h-full min-h-56 flex-1"
+                  />
+                </Card>
+              </div>
+            </div>
           </section>
 
           {/* Growth — cumulative resets to 0 at the start of the selected period */}
