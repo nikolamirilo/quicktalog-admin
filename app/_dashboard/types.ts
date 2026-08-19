@@ -213,15 +213,35 @@ export type Insights = {
   topCatalogues: Ranking[]
 }
 
+// ── Who is creating: new signups vs the existing base ───────────────────────
+// The old "catalogues per user" divided every catalogue created in the period
+// by the new signups alone, which belongs to neither group. These are the two
+// ratios that actually mean something, kept separate on purpose.
+
+export type CreationSplit = {
+  newUsers: number // signed up inside the period
+  existingUsers: number // signed up before the period started
+  cataloguesByNewUsers: number
+  cataloguesByExistingUsers: number
+  perNewUser: number
+  perExistingUser: number
+  activeExistingCreators: number // existing users who created at least one
+  overTime: {
+    date: string
+    "By new users": number
+    "By existing users": number
+  }[]
+}
+
 export type DashboardView = {
   insights: Insights
+  creationSplit: CreationSplit
   totals: {
     users: number
     catalogues: number
     pageviews: number
     uniqueVisitors: number
     activeUsers: number
-    avgCataloguesPerUser: number
   }
   growth: GrowthSeries
   pageviewsSeries: Pageview[]

@@ -170,9 +170,6 @@ export function computeView(
     pageviews: totalPv,
     uniqueVisitors: totalUv,
     activeUsers,
-    avgCataloguesPerUser: usersInRange.length
-      ? Number((cataloguesInRange.length / usersInRange.length).toFixed(2))
-      : 0,
   }
 
   // Bucket size: daily for short ranges (≤90 days), monthly otherwise.
@@ -859,8 +856,61 @@ export function computeView(
       .slice(0, 8),
   }
 
+  // 12. Who is creating — new signups vs the existing base. Keeping these two
+  // ratios apart matters: dividing every catalogue created in the period by
+  // the new signups alone produces a number that describes neither group.
+  // "Existing" means signed up strictly before the period started — not just
+  // "not in range", which would sweep in later signups when the range ends in
+  // the past (a custom range) and quietly inflate the denominator.
+  const existingUserIds = new Set<string>()
+  for (const u of data.users) {
+    if (u.created_at && u.created_at.slice(0, 10) < startISO) {
+      existingUserIds.add(u.id)
+    }
+  }
+  // A catalogue whose owner is not in `users` at all (deleted account) counts
+  // as existing, since it certainly was not created by a signup in range.
+  const cataloguesByNew = cohortCatalogues.length
+  const cataloguesByExisting = cataloguesInRange.length - cataloguesByNew
+  const activeExistingCreators = new Set(
+    cataloguesInRange
+      .filter((c) => !newUserIds.has(c.created_by))
+      .map((c) => c.created_by),
+  ).size
+  const splitByPeriod = new Map<string, { neu: number; old: number }>(
+    periods.map((p) => [p, { neu: 0, old: 0 }]),
+  )
+  for (const c of cataloguesInRange) {
+    const b = splitByPeriod.get(periodKeyOf(c.created_at))
+    if (!b) continue
+    if (newUserIds.has(c.created_by)) b.neu++
+    else b.old++
+  }
+  const creationSplit = {
+    newUsers: usersInRange.length,
+    existingUsers: existingUserIds.size,
+    cataloguesByNewUsers: cataloguesByNew,
+    cataloguesByExistingUsers: cataloguesByExisting,
+    perNewUser: usersInRange.length
+      ? Number((cataloguesByNew / usersInRange.length).toFixed(2))
+      : 0,
+    perExistingUser: existingUserIds.size
+      ? Number((cataloguesByExisting / existingUserIds.size).toFixed(2))
+      : 0,
+    activeExistingCreators,
+    overTime: periods.map((p) => {
+      const b = splitByPeriod.get(p)!
+      return {
+        date: periodLabel(p),
+        "By new users": b.neu,
+        "By existing users": b.old,
+      }
+    }),
+  }
+
   return {
     insights,
+    creationSplit,
     totals,
     growth: {
       users: { monthly: usersMonthly, cumulative: usersCumulative },

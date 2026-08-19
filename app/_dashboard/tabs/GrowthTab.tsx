@@ -4,6 +4,7 @@ import { AreaChart, BarChart, Card } from "@/components/charts"
 
 import type { DashboardView } from "../types"
 import {
+  ChartCard,
   KpiCard,
   SectionHeading,
   compactNumber,
@@ -20,7 +21,7 @@ export default function GrowthTab({
   view: DashboardView
   animationKey: string
 }) {
-  const { totals, growth, pageviewsSeries } = view
+  const { totals, growth, pageviewsSeries, creationSplit } = view
 
   return (
     <div className="space-y-6">
@@ -42,7 +43,7 @@ export default function GrowthTab({
         <KpiCard
           label="New catalogues"
           value={number(totals.catalogues)}
-          hint={`${decimal(totals.avgCataloguesPerUser)} avg per new user`}
+          hint={`${number(creationSplit.cataloguesByNewUsers)} by new users · ${number(creationSplit.cataloguesByExistingUsers)} by existing`}
           accent="violet"
         />
         <KpiCard
@@ -52,11 +53,73 @@ export default function GrowthTab({
           accent="emerald"
         />
         <KpiCard
-          label="Catalogues / user"
-          value={decimal(totals.avgCataloguesPerUser)}
-          hint="in selected period"
+          label="Existing users"
+          value={number(creationSplit.existingUsers)}
+          hint={`${number(creationSplit.activeExistingCreators)} created something this period`}
+          accent="gray"
+        />
+      </section>
+
+      {/* Two separate ratios. A single "catalogues per user" would have to mix
+          catalogues from the existing base into a count of new signups, and
+          the result describes neither group. */}
+      <SectionHeading
+        title="Who is creating"
+        subtitle="New signups and the existing base produce catalogues at very different rates — kept apart on purpose"
+      />
+
+      <section
+        key={`${animationKey}-split-kpi`}
+        className="animate-chart-in grid grid-cols-2 gap-4 lg:grid-cols-4"
+      >
+        <KpiCard
+          label="Catalogues / new user"
+          value={decimal(creationSplit.perNewUser)}
+          hint={`${number(creationSplit.cataloguesByNewUsers)} ÷ ${number(creationSplit.newUsers)} new users`}
+          accent="blue"
+        />
+        <KpiCard
+          label="Catalogues / existing user"
+          value={decimal(creationSplit.perExistingUser)}
+          hint={`${number(creationSplit.cataloguesByExistingUsers)} ÷ ${number(creationSplit.existingUsers)} existing users`}
           accent="amber"
         />
+        <KpiCard
+          label="From new users"
+          value={number(creationSplit.cataloguesByNewUsers)}
+          hint={`${
+            totals.catalogues
+              ? Math.round(
+                  (creationSplit.cataloguesByNewUsers / totals.catalogues) * 100,
+                )
+              : 0
+          }% of catalogues this period`}
+          accent="violet"
+        />
+        <KpiCard
+          label="From existing users"
+          value={number(creationSplit.cataloguesByExistingUsers)}
+          hint={`${number(creationSplit.activeExistingCreators)} distinct existing creators`}
+          accent="cyan"
+        />
+      </section>
+
+      <section key={`${animationKey}-split-chart`} className="animate-chart-in">
+        <ChartCard
+          title="Catalogues created: new vs existing users"
+          subtitle="Stacked per period, split by whether the creator signed up inside the period"
+        >
+          <BarChart
+            data={creationSplit.overTime}
+            index="date"
+            categories={["By new users", "By existing users"]}
+            colors={["blue", "amber"]}
+            type="stacked"
+            valueFormatter={number}
+            yAxisWidth={44}
+            className="h-64"
+          />
+        </ChartCard>
       </section>
 
       <SectionHeading
