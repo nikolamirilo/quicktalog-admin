@@ -59,7 +59,7 @@ export default function InsightsTab({
         <KpiCard
           label="Catalogues per user"
           value={decimal(insights.cataloguesPerUser)}
-          hint="ratio · created ÷ new users"
+          hint="their catalogues ÷ new users · existing users excluded"
           accent="amber"
         />
         <KpiCard
