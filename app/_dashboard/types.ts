@@ -176,7 +176,45 @@ export type Features = {
   }[]
 }
 
+// ── New-user insights (the "Insights" tab) ──────────────────────────────────
+// Everything here is scoped to the cohort of users who signed up inside the
+// selected period, plus the catalogues those users created in that period.
+
+export type Insights = {
+  newUsers: number
+  activatedUsers: number // new users with >=1 catalogue
+  activationRate: number
+  cataloguesCreated: number // catalogues created in range by the new cohort
+  cataloguesPerUser: number // the ratio
+  publishedCatalogues: number
+  publishRate: number
+  totalViews: number // pageviews on catalogues owned by the new cohort
+  uniqueVisitors: number
+  viewsPerCatalogue: number
+  viewsPerUser: number
+  subscribedUsers: number
+  paidConversionRate: number
+  medianTtvDays: number | null
+  overTime: {
+    date: string
+    "New users": number
+    "New catalogues": number
+  }[]
+  ratioOverTime: { date: string; "Catalogues per user": number }[]
+  byCategory: Bucket[] // business type
+  bySource: Bucket[]
+  byLanguage: Bucket[]
+  byStatus: Bucket[]
+  byPlan: Bucket[]
+  viewsByCategory: Bucket[]
+  viewsBySource: Bucket[]
+  attributedViews: number // views matched to a specific catalogue
+  topCreators: Ranking[]
+  topCatalogues: Ranking[]
+}
+
 export type DashboardView = {
+  insights: Insights
   totals: {
     users: number
     catalogues: number

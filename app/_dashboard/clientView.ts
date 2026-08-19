@@ -339,6 +339,10 @@ export function computeView(
   )
   const catalogueViews = new Map<string, number>()
   const urlToCat = new Map<string, string>()
+  // Same attribution, keyed by catalogue id — names are not guaranteed unique
+  // and the insights tab needs to join views back onto a specific row.
+  const viewsByCatId = new Map<string, number>()
+  const visitorsByCatId = new Map<string, number>()
   for (const [url, pv] of pvByUrl) {
     const lower = url.toLowerCase()
     for (const c of cataloguesByLen) {
@@ -346,6 +350,11 @@ export function computeView(
       if (lower.includes(c.name.toLowerCase())) {
         catalogueViews.set(c.name, (catalogueViews.get(c.name) ?? 0) + pv)
         urlToCat.set(url, c.name)
+        viewsByCatId.set(c.id, (viewsByCatId.get(c.id) ?? 0) + pv)
+        visitorsByCatId.set(
+          c.id,
+          (visitorsByCatId.get(c.id) ?? 0) + (uvByUrl.get(url) ?? 0),
+        )
         break
       }
     }
@@ -691,7 +700,167 @@ export function computeView(
     }),
   }
 
+  // 11. New-user insights — everything below is scoped to the cohort of users
+  // who signed up inside the selected period, and to the catalogues that
+  // cohort created in the same period.
+  const newUserIds = new Set(usersInRange.map((u) => u.id))
+  const cohortCatalogues = cataloguesInRange.filter((c) =>
+    newUserIds.has(c.created_by),
+  )
+  const cohortActivated = new Set(cohortCatalogues.map((c) => c.created_by)).size
+  const cohortPublished = cohortCatalogues.filter((c) => isPublished(c.status))
+
+  // Views are taken from the analytics rows owned by the cohort, so URLs that
+  // never matched a catalogue name still count towards the headline total.
+  let cohortViews = 0
+  let cohortVisitors = 0
+  for (const a of analyticsInRange) {
+    if (!newUserIds.has(a.user_id)) continue
+    cohortViews += a.pageview_count ?? 0
+    cohortVisitors += a.unique_visitors ?? 0
+  }
+
+  const activeCustomerIds = activeCustomers
+  const cohortSubscribed = usersInRange.filter(
+    (u) => u.customer_id && activeCustomerIds.has(u.customer_id),
+  ).length
+
+  // Per-period cohort series: signups, catalogues they created, and the ratio.
+  const cohortUsersByPeriod = new Map<string, number>(periods.map((p) => [p, 0]))
+  const cohortCatsByPeriod = new Map<string, number>(periods.map((p) => [p, 0]))
+  for (const u of usersInRange) {
+    if (!u.created_at) continue
+    const k = periodKeyOf(u.created_at)
+    if (cohortUsersByPeriod.has(k))
+      cohortUsersByPeriod.set(k, cohortUsersByPeriod.get(k)! + 1)
+  }
+  for (const c of cohortCatalogues) {
+    const k = periodKeyOf(c.created_at)
+    if (cohortCatsByPeriod.has(k))
+      cohortCatsByPeriod.set(k, cohortCatsByPeriod.get(k)! + 1)
+  }
+
+  // Views broken down by the attributes of the catalogue that earned them.
+  const sumViewsBy = (pick: (c: (typeof cohortCatalogues)[number]) => string) => {
+    const m = new Map<string, number>()
+    for (const c of cohortCatalogues) {
+      const v = viewsByCatId.get(c.id) ?? 0
+      if (v <= 0) continue
+      const k = pick(c)
+      m.set(k, (m.get(k) ?? 0) + v)
+    }
+    return Array.from(m.entries())
+      .map(([name, value]) => ({ name, value }))
+      .sort((a, b) => b.value - a.value)
+  }
+  const viewsByCategory = sumViewsBy((c) => titleCase(c.business_type ?? "-"))
+  const viewsBySource = sumViewsBy((c) => titleCase(c.source ?? "-"))
+  const attributedViews = cohortCatalogues.reduce(
+    (s, c) => s + (viewsByCatId.get(c.id) ?? 0),
+    0,
+  )
+
+  const cohortCatsByUser = new Map<string, number>()
+  for (const c of cohortCatalogues) {
+    cohortCatsByUser.set(
+      c.created_by,
+      (cohortCatsByUser.get(c.created_by) ?? 0) + 1,
+    )
+  }
+
+  const insights = {
+    newUsers: usersInRange.length,
+    activatedUsers: cohortActivated,
+    activationRate: usersInRange.length
+      ? round1((cohortActivated / usersInRange.length) * 100)
+      : 0,
+    cataloguesCreated: cohortCatalogues.length,
+    cataloguesPerUser: usersInRange.length
+      ? Number((cohortCatalogues.length / usersInRange.length).toFixed(2))
+      : 0,
+    publishedCatalogues: cohortPublished.length,
+    publishRate: cohortCatalogues.length
+      ? round1((cohortPublished.length / cohortCatalogues.length) * 100)
+      : 0,
+    totalViews: cohortViews,
+    uniqueVisitors: cohortVisitors,
+    viewsPerCatalogue: cohortCatalogues.length
+      ? round1(cohortViews / cohortCatalogues.length)
+      : 0,
+    viewsPerUser: usersInRange.length
+      ? round1(cohortViews / usersInRange.length)
+      : 0,
+    subscribedUsers: cohortSubscribed,
+    paidConversionRate: usersInRange.length
+      ? round1((cohortSubscribed / usersInRange.length) * 100)
+      : 0,
+    medianTtvDays: activation.medianTtvDays,
+    overTime: periods.map((p) => ({
+      date: periodLabel(p),
+      "New users": cohortUsersByPeriod.get(p) ?? 0,
+      "New catalogues": cohortCatsByPeriod.get(p) ?? 0,
+    })),
+    // Running ratio rather than a per-period one: on a daily bucket a signup
+    // and the catalogue it eventually produces rarely land on the same day, so
+    // a per-period division would read zero almost everywhere.
+    ratioOverTime: (() => {
+      let ru = 0
+      let rc = 0
+      return periods.map((p) => {
+        ru += cohortUsersByPeriod.get(p) ?? 0
+        rc += cohortCatsByPeriod.get(p) ?? 0
+        return {
+          date: periodLabel(p),
+          "Catalogues per user": ru ? Number((rc / ru).toFixed(2)) : 0,
+        }
+      })
+    })(),
+    byCategory: bucketise(
+      cohortCatalogues.map((c) => ({ key: c.business_type })),
+      titleCase,
+    ).slice(0, 8),
+    bySource: bucketise(
+      cohortCatalogues.map((c) => ({ key: c.source })),
+      titleCase,
+    ),
+    byLanguage: bucketise(
+      cohortCatalogues.map((c) => ({ key: c.language?.toUpperCase() ?? null })),
+    ),
+    byStatus: bucketise(
+      cohortCatalogues.map((c) => ({ key: c.status })),
+      titleCase,
+    ),
+    byPlan: planByUsers,
+    viewsByCategory: viewsByCategory.slice(0, 8),
+    viewsBySource,
+    attributedViews,
+    topCreators: Array.from(cohortCatsByUser.entries())
+      .map(([id, count]) => {
+        const u = userById.get(id)
+        const label = u?.name?.trim() || u?.email || id.slice(0, 8)
+        return {
+          id,
+          name: label,
+          value: count,
+          meta: u?.email && u?.name ? u.email : undefined,
+        }
+      })
+      .sort((a, b) => b.value - a.value)
+      .slice(0, 8),
+    topCatalogues: cohortCatalogues
+      .map((c) => ({
+        id: c.id,
+        name: c.name,
+        value: viewsByCatId.get(c.id) ?? 0,
+        meta: titleCase(c.business_type ?? "-"),
+      }))
+      .filter((r) => r.value > 0)
+      .sort((a, b) => b.value - a.value)
+      .slice(0, 8),
+  }
+
   return {
+    insights,
     totals,
     growth: {
       users: { monthly: usersMonthly, cumulative: usersCumulative },
